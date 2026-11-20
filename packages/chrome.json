@@ -1,0 +1,28 @@
+{
+  "architecture": "x64",
+  "success_codes": [0, 3010],
+  "reboot_codes": [3010],
+  "redistribution_approved": false,
+  "id": "chrome",
+  "name": "Google Chrome Enterprise",
+  "publisher": "Google LLC",
+  "winget": "Google.Chrome",
+  "installer_type": "msi",
+  "silent_arguments": "/qn /norestart REBOOT=ReallySuppress",
+  "detection": {
+    "type": "file",
+    "path": "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe",
+    "name": "",
+    "value": ""
+  },
+  "signer_subjects": ["Google LLC"],
+  "allowed_hosts": ["dl.google.com", "dl.googleusercontent.com"],
+  "supported_os": [
+    "server2019",
+    "server2022",
+    "server2025",
+    "windows10",
+    "windows11"
+  ],
+  "server_core": false
+}

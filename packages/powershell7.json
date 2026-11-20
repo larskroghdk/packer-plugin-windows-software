@@ -1,0 +1,32 @@
+{
+  "architecture": "x64",
+  "success_codes": [0, 3010],
+  "reboot_codes": [3010],
+  "redistribution_approved": false,
+  "id": "powershell7",
+  "name": "Microsoft PowerShell 7",
+  "publisher": "Microsoft Corporation",
+  "winget": "Microsoft.PowerShell",
+  "installer_type": "msi",
+  "silent_arguments": "/qn /norestart REBOOT=ReallySuppress",
+  "detection": {
+    "type": "file",
+    "path": "%ProgramFiles%\\PowerShell\\7\\pwsh.exe",
+    "name": "",
+    "value": ""
+  },
+  "signer_subjects": ["Microsoft Corporation"],
+  "allowed_hosts": [
+    "github.com",
+    "objects.githubusercontent.com",
+    "release-assets.githubusercontent.com"
+  ],
+  "supported_os": [
+    "server2019",
+    "server2022",
+    "server2025",
+    "windows10",
+    "windows11"
+  ],
+  "server_core": true
+}

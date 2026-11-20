@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-2025]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Format, test, vet and build
+        shell: pwsh
+        run: ./scripts/check.ps1
+      - run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --require-hashes -r scripts/requirements.txt
+      - run: python -m unittest discover -s test -p 'test_*.py'
+      - name: Windows PowerShell tests
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+          $result = Invoke-Pester -Path test/pester/Install.Tests.ps1 -PassThru
+          if ($result.FailedCount -gt 0) { exit 1 }
+      - name: PowerShell example runner tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Import-Module Pester -RequiredVersion 5.7.1
+          $result = Invoke-Pester -Path test/pester/PackerExample.Tests.ps1 -PassThru
+          if ($result.FailedCount -gt 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-${{ runner.os }}
+          path: bin/*
+          retention-days: 7

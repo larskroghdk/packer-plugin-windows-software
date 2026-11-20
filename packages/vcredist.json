@@ -1,0 +1,32 @@
+{
+  "architecture": "x64",
+  "success_codes": [0, 3010],
+  "reboot_codes": [3010],
+  "redistribution_approved": false,
+  "id": "vcredist",
+  "name": "Microsoft Visual C++ 2015-2022 Redistributable",
+  "publisher": "Microsoft Corporation",
+  "winget": "Microsoft.VCRedist.2015+.x64",
+  "installer_type": "exe",
+  "silent_arguments": "/install /quiet /norestart",
+  "detection": {
+    "type": "registry",
+    "path": "HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64",
+    "name": "",
+    "value": "Version"
+  },
+  "signer_subjects": ["Microsoft Corporation"],
+  "allowed_hosts": [
+    "aka.ms",
+    "download.visualstudio.microsoft.com",
+    "download.microsoft.com"
+  ],
+  "supported_os": [
+    "server2019",
+    "server2022",
+    "server2025",
+    "windows10",
+    "windows11"
+  ],
+  "server_core": true
+}

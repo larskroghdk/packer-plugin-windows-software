@@ -1,0 +1,32 @@
+{
+  "architecture": "x64",
+  "success_codes": [0, 3010],
+  "reboot_codes": [3010],
+  "redistribution_approved": false,
+  "id": "edge",
+  "name": "Microsoft Edge for Business",
+  "publisher": "Microsoft Corporation",
+  "winget": "Microsoft.Edge",
+  "installer_type": "msi",
+  "silent_arguments": "/qn /norestart REBOOT=ReallySuppress",
+  "detection": {
+    "type": "file",
+    "path": "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe",
+    "name": "",
+    "value": ""
+  },
+  "signer_subjects": ["Microsoft Corporation"],
+  "allowed_hosts": [
+    "download.microsoft.com",
+    "msedge.sf.dl.delivery.mp.microsoft.com",
+    "msedge.sf.tlu.dl.delivery.mp.microsoft.com"
+  ],
+  "supported_os": [
+    "server2019",
+    "server2022",
+    "server2025",
+    "windows10",
+    "windows11"
+  ],
+  "server_core": false
+}

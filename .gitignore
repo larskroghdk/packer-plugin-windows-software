@@ -1,0 +1,10 @@
+/bin/
+/artifacts/
+/dist/
+/reports/
+*.test.exe
+__pycache__/
+.venv/
+.cache/
+testResults.xml
+/examples/windows-software.pkrvars.hcl
