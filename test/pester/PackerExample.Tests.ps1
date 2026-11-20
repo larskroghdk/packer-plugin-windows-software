@@ -2,13 +2,14 @@ BeforeAll {
     . "$PSScriptRoot/../../examples/Invoke-PackerExample.ps1"
     $script:powerShellExecutable = (Get-Command pwsh -CommandType Application | Select-Object -First 1).Source
     $script:stepOptions = @{
-        Executable = $script:powerShellExecutable
+        Executable       = $script:powerShellExecutable
         WorkingDirectory = $TestDrive
-        Environment = @{}
-        Step = 'Fixture command'
-        FailureAdvice = 'Check the fixture.'
+        Environment      = @{}
+        Step             = 'Fixture command'
+        FailureAdvice    = 'Check the fixture.'
     }
 }
+
 Describe 'Packer example native command boundary' {
     It 'captures successful tool output only when requested' {
         $result = Invoke-ExampleStep @stepOptions -Arguments @('-NoProfile', '-Command', 'Write-Output "fixture-output"') -CaptureOutput

@@ -12,7 +12,6 @@
   "detection": {
     "type": "file",
     "path": "%ProgramFiles%\\PowerShell\\7\\pwsh.exe",
-    "name": "",
     "value": ""
   },
   "signer_subjects": ["Microsoft Corporation"],
@@ -21,6 +20,7 @@
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com"
   ],
+  "allowed_path_prefix": "/PowerShell/PowerShell/releases/download/",
   "supported_os": [
     "server2019",
     "server2022",

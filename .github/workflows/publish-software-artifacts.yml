@@ -1,6 +1,8 @@
 name: Publish software artifacts
 
 on:
+  schedule:
+    - cron: "23 5 * * *"
   workflow_dispatch:
     inputs:
       package:
@@ -9,13 +11,6 @@ on:
         options: [all, vcredist, powershell7, adobereader, chrome, edge]
         default: all
         required: true
-  workflow_call:
-    inputs:
-      package:
-        description: Package ID or all
-        type: string
-        default: all
-        required: false
 
 permissions:
   contents: read
@@ -30,24 +25,24 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          python-version: "3.13"
-      - run: python -m pip install --require-hashes -r scripts/requirements.txt
+          go-version-file: go.mod
       - name: Resolve and download vendor installers
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          PACKAGE_ID: ${{ inputs.package }}
-        run: python scripts/resolve.py --package $env:PACKAGE_ID
+          # Scheduled runs have no inputs.
+          PACKAGE_ID: ${{ inputs.package || 'all' }}
+        run: go run ./cmd/resolve-installers -package $env:PACKAGE_ID
       - name: Validate hashes, signatures and embedded versions
         shell: pwsh
         run: ./scripts/validate-artifacts.ps1
       - name: Retain validation metadata
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: software-validation-${{ github.run_id }}
           retention-days: 30

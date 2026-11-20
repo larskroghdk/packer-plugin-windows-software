@@ -5,14 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/packer-plugin-sdk/packer"
-	"github.com/hashicorp/packer-plugin-sdk/uuid"
-	"github.com/larskroghdk/packer-plugin-windows-software/internal/catalog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"time"
+
+	"github.com/hashicorp/packer-plugin-sdk/packer"
+	"github.com/hashicorp/packer-plugin-sdk/uuid"
+
+	"github.com/larskroghdk/packer-plugin-windows-software/internal/catalog"
 )
 
 // Provisioner coordinates validated host downloads and Windows guest installation.
@@ -67,23 +69,37 @@ type Report struct {
 	Error           string    `json:"error,omitempty"`
 }
 
-var errTransport = errors.New("guest transport failed")
+var (
+	errTransport = errors.New("guest transport failed")
+	// errGuestUnusable marks guest results after which the VM state is unknown,
+	// such as a still-running installer or an installer-initiated restart.
+	errGuestUnusable = errors.New("guest state is unknown; discard this VM")
+)
 
+// observation is the guest's Inspect or Install result.
 type observation struct {
 	Version        string `json:"version"`
 	Error          string `json:"error"`
+	Fatal          bool   `json:"fatal"`
 	RebootRequired bool   `json:"reboot_required"`
 	ExitCode       *int   `json:"exit_code"`
+}
+
+// abortsBuild reports whether err must stop provisioning even when fail_on_error is false.
+func abortsBuild(err error) bool {
+	return errors.Is(err, errTransport) || errors.Is(err, errGuestUnusable) ||
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
 
 // Provision installs in configured order and never initiates a reboot.
 func (p *Provisioner) Provision(ctx context.Context, ui packer.Ui, comm packer.Communicator, data map[string]any) (runErr error) {
 	if conn, _ := data["ConnType"].(string); conn != "" && conn != "winrm" {
-		return fmt.Errorf("windows-software requires WinRM")
+		return fmt.Errorf("windows-software requires WinRM, not %s", conn)
 	}
 	report := Report{PluginVersion: p.version, StartedAt: time.Now().UTC(), Packages: []Result{}}
 	r := &remote{comm: comm, ui: ui, dir: `C:\Windows\Temp\packer-windows-software-` + uuid.TimeOrderedUUID()}
 	defer func() {
+		// The build context may already be cancelled; cleanup gets its own deadline.
 		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := r.cleanup(cleanCtx); err != nil {
@@ -98,17 +114,17 @@ func (p *Provisioner) Provision(ctx context.Context, ui packer.Ui, comm packer.C
 			runErr = errors.Join(runErr, writeReport(p.config.ReportPath, report))
 		}
 	}()
-	if err := r.install(ctx); err != nil {
-		return err
+	if err := r.setup(ctx); err != nil {
+		return fmt.Errorf("%w: %w", errTransport, err)
 	}
 	if err := r.action(ctx, "Facts", nil, &report.OS); err != nil {
-		return err
+		return fmt.Errorf("%w: %w", errTransport, err)
 	}
 	if report.OS.Error != "" {
-		return errors.New(report.OS.Error)
+		return fmt.Errorf("detect Windows platform: %s", report.OS.Error)
 	}
 	if report.OS.Architecture != "AMD64" || report.OS.Family == "" {
-		return fmt.Errorf("unsupported Windows OS or architecture: %+v", report.OS)
+		return fmt.Errorf("unsupported Windows build %d (%s) on %s", report.OS.Build, report.OS.Name, report.OS.Architecture)
 	}
 	// Check all OS requirements before installing any package.
 	for _, pkg := range p.packages {
@@ -128,23 +144,22 @@ func (p *Provisioner) Provision(ctx context.Context, ui packer.Ui, comm packer.C
 		result, err := p.installPackage(ctx, r, pkg)
 		report.Packages = append(report.Packages, result)
 		if err != nil {
-			ui.Error(pkg.ID + ": " + err.Error())
+			err = fmt.Errorf("%s: %w", pkg.ID, err)
+			ui.Error(err.Error())
 			failures = append(failures, err)
-			if p.config.FailOnError || errors.Is(err, errTransport) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			if p.config.FailOnError || abortsBuild(err) || ctx.Err() != nil {
 				return errors.Join(failures...)
 			}
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return nil
+	return ctx.Err()
 }
+
 func (p *Provisioner) installPackage(ctx context.Context, r *remote, pkg catalog.Package) (result Result, err error) {
 	started := time.Now()
 	requested := p.config.Versions[pkg.ID]
 	if requested == "" {
-		requested = "latest-validated"
+		requested = catalog.LatestValidated
 	}
 	result = Result{ID: pkg.ID, Name: pkg.Name, RequestedVersion: requested, ResolvedVersion: pkg.Version, Source: pkg.URL, SHA256: pkg.SHA256, Status: "failed"}
 	defer func() {
@@ -155,10 +170,11 @@ func (p *Provisioner) installPackage(ctx context.Context, r *remote, pkg catalog
 	}()
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
+
 	input := map[string]any{"package": pkg}
 	var observed observation
 	if err = r.action(ctx, "Inspect", input, &observed); err != nil {
-		return result, errors.Join(errTransport, err)
+		return result, fmt.Errorf("%w: %w", errTransport, err)
 	}
 	if observed.Error != "" {
 		return result, errors.New(observed.Error)
@@ -167,7 +183,7 @@ func (p *Provisioner) installPackage(ctx context.Context, r *remote, pkg catalog
 	result.FinalVersion = observed.Version
 	if observed.Version != "" {
 		comparison := catalog.Compare(observed.Version, pkg.Version)
-		pinned := requested != "latest-validated"
+		pinned := requested != catalog.LatestValidated
 		if comparison > 0 && pinned {
 			return result, fmt.Errorf("installed %s is newer than pin %s; downgrades are forbidden", observed.Version, pkg.Version)
 		}
@@ -176,69 +192,92 @@ func (p *Provisioner) installPackage(ctx context.Context, r *remote, pkg catalog
 			return result, nil
 		}
 	}
-	dir, err := os.MkdirTemp("", "packer-windows-software-")
+
+	guestPath, err := p.transferInstaller(ctx, r, pkg)
 	if err != nil {
 		return result, err
 	}
+	// The guest waits only for the time left on this package's deadline.
+	deadline, _ := ctx.Deadline()
+	remaining := int(time.Until(deadline).Seconds())
+	if remaining < 1 {
+		return result, context.DeadlineExceeded
+	}
+	input["installer_path"] = guestPath
+	input["timeout_seconds"] = remaining
+	observed = observation{}
+	if err = r.action(ctx, "Install", input, &observed); err != nil {
+		return result, fmt.Errorf("%w: %w", errTransport, err)
+	}
+	result.ExitCode = observed.ExitCode
+	result.RebootRequired = observed.RebootRequired
+	result.FinalVersion = observed.Version
+	if observed.Fatal {
+		return result, fmt.Errorf("%w: %s", errGuestUnusable, observed.Error)
+	}
+	if observed.Error != "" {
+		return result, errors.New(observed.Error)
+	}
+	if observed.Version == "" || catalog.Compare(observed.Version, pkg.Version) != 0 {
+		return result, fmt.Errorf("installed version %q does not match %s", observed.Version, pkg.Version)
+	}
+	result.Status = "installed"
+	return result, nil
+}
+
+// transferInstaller downloads and verifies the installer on the host, uploads it
+// to the guest working directory and returns its guest path.
+func (p *Provisioner) transferInstaller(ctx context.Context, r *remote, pkg catalog.Package) (string, error) {
+	dir, err := os.MkdirTemp("", "packer-windows-software-")
+	if err != nil {
+		return "", err
+	}
 	defer os.RemoveAll(dir)
 	local := filepath.Join(dir, "installer."+pkg.InstallerType)
-	for attempt := 0; attempt <= p.config.DownloadRetries; attempt++ {
-		err = catalog.Download(ctx, p.httpClient, pkg, local)
+	for attempt := 0; ; attempt++ {
+		err = catalog.Download(ctx, p.httpClient, pkg.URL, pkg.SHA256, local)
 		if err == nil {
 			break
 		}
 		if attempt == p.config.DownloadRetries {
-			return result, err
+			return "", fmt.Errorf("download %s: %w", pkg.URL, err)
 		}
 		timer := time.NewTimer(time.Duration(attempt+1) * time.Second)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return result, ctx.Err()
+			return "", ctx.Err()
 		case <-timer.C:
 		}
 	}
-	guestPath := r.path(pkg.ID + "." + pkg.InstallerType)
 	file, err := os.Open(local)
 	if err != nil {
-		return result, err
+		return "", err
 	}
-	err = r.comm.Upload(guestPath, file, nil)
-	closeErr := file.Close()
-	if err = errors.Join(err, closeErr); err != nil {
-		return result, errors.Join(errTransport, err)
+	defer file.Close()
+	guestPath := r.path(pkg.ID + "." + pkg.InstallerType)
+	if err = r.comm.Upload(guestPath, file, nil); err != nil {
+		return "", fmt.Errorf("%w: upload installer: %w", errTransport, err)
 	}
-	input["installer_path"] = guestPath
-	input["timeout_seconds"] = int(p.timeout.Seconds())
-	if err = r.action(ctx, "Install", input, &observed); err != nil {
-		return result, errors.Join(errTransport, err)
-	}
-	result.ExitCode = observed.ExitCode
-	result.RebootRequired = observed.RebootRequired
-	result.FinalVersion = observed.Version
-	if observed.Error != "" {
-		return result, errors.New(observed.Error)
-	}
-	if observed.Version == "" || catalog.Compare(observed.Version, pkg.Version) != 0 {
-		return result, fmt.Errorf("guest installation version verification failed")
-	}
-	result.Status = "installed"
-	return result, nil
+	return guestPath, ctx.Err()
 }
+
+// writeReport atomically replaces path with the JSON report.
 func writeReport(path string, report Report) error {
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	dir := filepath.Dir(path)
+	if err = os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".software-report-*.json")
+	f, err := os.CreateTemp(dir, ".software-report-*.json")
 	if err != nil {
 		return err
 	}
 	name := f.Name()
-	defer os.Remove(name)
+	defer os.Remove(name) // no-op after a successful rename
 	if _, err = f.Write(append(data, '\n')); err != nil {
 		f.Close()
 		return err

@@ -12,7 +12,6 @@
   "detection": {
     "type": "registry",
     "path": "HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64",
-    "name": "",
     "value": "Version"
   },
   "signer_subjects": ["Microsoft Corporation"],

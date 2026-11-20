@@ -13,7 +13,6 @@
       "detection": {
         "type": "file",
         "path": "%ProgramFiles%\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe",
-        "name": "",
         "value": ""
       },
       "signer_subjects": ["Adobe Inc.", "Adobe Systems Incorporated"],
@@ -44,7 +43,6 @@
       "detection": {
         "type": "file",
         "path": "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe",
-        "name": "",
         "value": ""
       },
       "signer_subjects": ["Google LLC"],
@@ -75,7 +73,6 @@
       "detection": {
         "type": "file",
         "path": "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe",
-        "name": "",
         "value": ""
       },
       "signer_subjects": ["Microsoft Corporation"],
@@ -106,7 +103,6 @@
       "detection": {
         "type": "file",
         "path": "%ProgramFiles%\\PowerShell\\7\\pwsh.exe",
-        "name": "",
         "value": ""
       },
       "signer_subjects": ["Microsoft Corporation"],
@@ -137,7 +133,6 @@
       "detection": {
         "type": "registry",
         "path": "HKLM:\\SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64",
-        "name": "",
         "value": "Version"
       },
       "signer_subjects": ["Microsoft Corporation"],

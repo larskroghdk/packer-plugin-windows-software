@@ -1,61 +1,45 @@
 ---
 name: develop-windows-software
-description: Develop and troubleshoot this repository's native Packer windows-software provisioner, package manifests, PowerShell installation engine, and GitHub artifact workflows. Use for changes to packer-plugin-windows-software, not general Windows administration or installing software on the developer workstation.
+description: Change or debug the windows-software Packer provisioner, its catalog validation, or the embedded PowerShell guest engine (provisioner/, internal/catalog/, guest/Install.ps1). Use for Go or guest-script changes in packer-plugin-windows-software, not for adding packages, publishing artifacts or general Windows administration.
 ---
 
 # Develop windows-software
 
-Read the repository's `AGENTS.md` and inspect the working tree before editing. Preserve concurrent user changes. Resolve repository paths from the project root; this skill lives at `.agents/skills/develop-windows-software/SKILL.md`.
+Read `AGENTS.md` and inspect the working tree before editing. Preserve concurrent user changes.
 
 ## Find the relevant contract
 
-- `main.go` registers the SDK default provisioner; Packer exposes it as `windows-software`. Keep `describe`, release binary naming and the SDK protocol consistent.
-- `provisioner/config.go` owns SDK configuration decoding and the HCL2 spec. Update both when changing options. `packages` order is installation order; `versions` contains exact pins or `latest-validated`.
-- `provisioner/` orchestrates host downloads, WinRM transfers, JSON guest actions and host reports. Reuse the builder's communicator; do not create another WinRM client or transfer GitHub credentials into the guest.
-- `internal/catalog/` owns strict validated-record decoding, numeric version selection and streamed SHA-256 verification. Unknown, missing, duplicate or unvalidated records fail before installation.
-- `guest/Install.ps1` is embedded. Keep it compatible with Windows PowerShell 5.1, with top-level functions and useful comment-based help. Review both dispatch behavior and helper behavior when changing it.
-- `packages/<id>.json` contains acquisition and installation policy; `packages/catalog.json` contains validated versions. Put vendor versions and URLs in data, never Go source. Ordinary EXE/MSI packages should need only a recipe.
+- `main.go` registers the SDK default provisioner; Packer exposes it as `windows-software`. Keep `describe`, release binary naming (`.goreleaser.yml`) and the SDK protocol consistent.
+- `provisioner/config.go` owns option decoding; `provisioner/config.hcl2spec.go` is generated from it with `go generate ./provisioner` (`packer-sdc`). Update both, the README option table and `provisioner/config_hcl2_test.go` when options change. `packages` order is installation order; `versions` holds numeric pins or `latest-validated`.
+- `provisioner/provisioner.go` orchestrates host download, upload, guest actions and the host report. `provisioner/remote.go` runs guest actions through the builder's communicator. Never open another WinRM client or send GitHub credentials into the guest.
+- `internal/catalog/` decodes validated records strictly, compares numeric versions, resolves pins and streams SHA-256-verified downloads. Unknown, missing, duplicate or unvalidated records fail in `Prepare`, before any guest work.
+- `guest/Install.ps1` is embedded (`guest/guest.go`) and runs under Windows PowerShell 5.1. Keep top-level functions with comment-based help, and the dot-source guard that `scripts/validate-artifacts.ps1` and Pester rely on.
 
-Read `README.md` for supported options and storage behavior. Read `docs/sources.md` when changing vendor compatibility, acquisition or licensing assumptions. Check the current implementation rather than assuming a documented feature already works.
+## Guest JSON protocol
+
+Each action writes one JSON result. Keep Go structs (`Facts`, `observation`) and guest hashtables aligned:
+
+- `Facts`: `name`, `build`, `family`, `architecture`, `server_core`, `error`.
+- `Inspect`/`Install`: `version`, `error`, `fatal`, `reboot_required`, `exit_code`.
+
+`fatal` means the VM is in an unknown state (installer still running after timeout, or exit code 1641). The host wraps it in `errGuestUnusable` and aborts even with `fail_on_error = false`; so do transport errors, cancellation and deadlines (`abortsBuild`). Ordinary package errors may continue when `fail_on_error = false`.
 
 ## Preserve the installation boundary
 
-Verify SHA-256 on the host and again in the guest. Require Windows Authenticode status `Valid` and an exact allowed certificate identity before execution. Do not weaken either check to accommodate a failed download or certificate rotation.
+- Verify SHA-256 on the host and again in the guest. Require Authenticode status `Valid` and a case-sensitive exact signer name before execution. Never weaken either to accommodate a changed download or certificate rotation.
+- Detect versions from registry values or file metadata, never `Win32_Product`. Compare numerically (leading zeros and missing trailing zeros are equal) in both `catalog.Compare` and `ConvertTo-PackageVersion`. A pin must not accept a newer installed version; verify the final version after installation.
+- GUI packages require Desktop Experience. Do not assume every Windows Server edition has it.
+- Suppress installer restarts and leave reboots to the Packer build. The guest receives only the time remaining on the package deadline and never kills a timed-out installer.
+- Keep temporary files in the per-run host and guest directories. Cleanup must not widen its root, follow reparse points or recurse. Write the host report on failure paths too.
 
-Use registry or executable metadata for detection, never `Win32_Product`. Compare numeric versions consistently, including leading zeros and omitted trailing zero components. Explicit pins must not silently accept a different installed version. Verify the installed version after installation.
-
-Return OS family, build, native architecture and Server Core status from detection. Keep their JSON fields aligned with Go structs and package eligibility checks. GUI applications require Desktop Experience; do not infer that all Windows Server editions support them.
-
-Suppress installer restarts. Preserve exit codes and reboot observations; 1641 means the installer initiated a restart and must fail the build. Leave actual restarts to the Packer build. Timeouts must not become successful package results or trigger blind installer retries. Keep cancellation and transport failures as build failures even when optional package failures may continue.
-
-Keep temporary files inside the generated per-run host/guest directories. Cleanup must not expand its roots, traverse reparse points or remove unrelated data. Write the requested host report on failure paths and preserve package errors, selected sources and final observed versions.
-
-## Change acquisition and publishing
-
-Inspect `scripts/resolve.py`, `scripts/validate-artifacts.ps1` and `scripts/publish-artifacts.ps1` together with the workflow. A syntactically valid workflow can still fail in its scripts.
-
-Select an actually supported stable installer format; a newer MSIX-only upstream version does not satisfy an MSI recipe. Download only from reviewed official hosts and verify the independently recorded hash. Investigate changed vendor hosts using official documentation before adjusting allowlists.
-
-Recipes default to vendor-only downloads. Upload installer bytes to GitHub only when the package's redistribution approval is established. Keep versioned release assets immutable, preserve old records, and recover interrupted publication without overwriting known-good assets. A moving vendor URL cannot guarantee historical availability; retain its hash and fail if the bytes change.
-
-Keep reusable workflow inputs declared and typed. Pass manual inputs through environment variables rather than interpolating them into shell code. Grant write permissions only to publishing jobs. Do not reference a GitHub environment unless it exists or the user explicitly requests that setup; concurrency groups do not require an environment.
-
-Editing automation does not itself authorize running a publication, pushing commits, creating releases or installing software. Follow the user's current task scope for those external actions.
-
-## Verify the affected behavior
-
-Use focused checks first, then run the repository checks required by `AGENTS.md`:
+## Verify
 
 ```powershell
 ./scripts/check.ps1
 staticcheck ./...
-python -m unittest discover -s test -p 'test_*.py'
 Invoke-Pester -Path test/pester
-packer fmt -check examples
 ```
 
-Use the dependency versions in `go.mod` and `scripts/requirements.txt`. Install Python dependencies in a local virtual environment. Use Actionlint when changing workflows, and PowerShell parsing/PSScriptAnalyzer when available. For restricted Pester sessions, disable the unused TestRegistry plugin through Pester configuration rather than requesting access to real registry keys; retain isolated TestDrive fixtures.
+Run `test/pester/Install.Tests.ps1` under Windows PowerShell 5.1 (`powershell.exe`), not only `pwsh`. In restricted sessions disable the TestRegistry plugin through `New-PesterConfiguration` rather than touching real registry keys. Run `Invoke-ScriptAnalyzer -Path . -Recurse -Severity Warning, Error` after PowerShell changes.
 
-Cover the changed observable behavior: malformed manifests, artifact lookup/hash failures, signature and publisher rejection, detection/version comparison, upgrades, silent arguments, exit codes, reboot handling, failure reporting or SDK communicator integration as applicable. Mocks prove protocol behavior, not actual installation compatibility.
-
-Download/signature validation may run without installing software. Run installation smoke tests only against an explicitly selected disposable Windows VM using `examples/windows-software.pkr.hcl`. Never run the package engine against the development workstation. State which checks actually ran, what failed or was blocked, and whether live Windows installation or GitHub publication was exercised.
+Mocks prove protocol behavior only. Live installation needs the `run-packer-example` skill and an explicitly selected disposable VM. Never run the guest engine's Install action on the development workstation.

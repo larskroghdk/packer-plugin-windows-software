@@ -3,14 +3,18 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/hashicorp/packer-plugin-sdk/plugin"
 	sdkversion "github.com/hashicorp/packer-plugin-sdk/version"
 	"github.com/larskroghdk/packer-plugin-windows-software/provisioner"
-	"os"
 )
 
-var version = "0.1.0"
-var versionPrerelease = "dev"
+// version and versionPrerelease are overridden by release ldflags.
+var (
+	version           = "0.1.0"
+	versionPrerelease = "dev"
+)
 
 func main() {
 	v := sdkversion.NewPluginVersion(version, versionPrerelease, "")

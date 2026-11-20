@@ -13,20 +13,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: go vet ./...
-      - run: go test ./...
-      - name: Determine Packer protocol
-        run: |
-          go build -o /tmp/software .
-          echo "API_VERSION=$(/tmp/software describe | jq -r '.api_version')" >> "$GITHUB_ENV"
-      - uses: goreleaser/goreleaser-action@v6
+      - name: Format, modules, test, vet and build
+        shell: pwsh
+        run: ./scripts/check.ps1
+      - name: Determine Packer plugin API version
+        run: echo "API_VERSION=$(./bin/packer-plugin-windows-software describe | jq -r '.api_version')" >> "$GITHUB_ENV"
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: v2.8.2
           args: release --clean

@@ -12,7 +12,6 @@
   "detection": {
     "type": "file",
     "path": "%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe",
-    "name": "",
     "value": ""
   },
   "signer_subjects": ["Microsoft Corporation"],

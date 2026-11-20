@@ -232,6 +232,5 @@ finally {
     $timer.Stop()
     Write-Information -InformationAction Continue "Packer example ended: $([DateTimeOffset]::Now.ToString('o'))"
     Write-Information -InformationAction Continue "Duration: $($timer.Elapsed.ToString('c')); status: $status; exit code: $exitCode"
-    $childEnvironment = $null
 }
 exit $exitCode

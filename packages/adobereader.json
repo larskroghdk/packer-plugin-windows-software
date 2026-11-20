@@ -12,7 +12,6 @@
   "detection": {
     "type": "file",
     "path": "%ProgramFiles%\\Adobe\\Acrobat DC\\Acrobat\\Acrobat.exe",
-    "name": "",
     "value": ""
   },
   "signer_subjects": ["Adobe Inc.", "Adobe Systems Incorporated"],
