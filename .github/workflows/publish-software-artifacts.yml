@@ -35,7 +35,6 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          # Scheduled runs have no inputs.
           PACKAGE_ID: ${{ inputs.package || 'all' }}
         run: go run ./cmd/resolve-installers -package $env:PACKAGE_ID
       - name: Validate hashes, signatures and embedded versions
