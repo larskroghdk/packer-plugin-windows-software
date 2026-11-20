@@ -44,7 +44,6 @@ jobs:
       - name: Guest engine tests (Windows PowerShell 5.1)
         shell: powershell
         run: |
-          # Pester 5 replaces the Microsoft-signed inbox Pester 3.4, which needs -SkipPublisherCheck.
           Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser -SkipPublisherCheck
           Import-Module Pester -RequiredVersion 5.7.1
           $result = Invoke-Pester -Path test/pester/Install.Tests.ps1 -PassThru
