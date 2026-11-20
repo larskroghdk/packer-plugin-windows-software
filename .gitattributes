@@ -1,0 +1,4 @@
+# LF everywhere: gofmt rejects CRLF, and Windows runners check out with core.autocrlf=true.
+* text=auto eol=lf
+*.exe binary
+*.msi binary

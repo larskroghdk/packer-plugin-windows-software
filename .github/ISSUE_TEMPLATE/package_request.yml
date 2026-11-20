@@ -1,0 +1,48 @@
+name: 📦 Package request
+description: Propose a new x64 EXE or MSI package recipe.
+labels: [package]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Recipes are reviewed for trust and licensing. Installers are downloaded from the vendor and are
+        never re-hosted without an explicit redistribution review.
+  - type: input
+    id: winget
+    attributes:
+      label: winget package identifier
+      description: Exact `PackageIdentifier` from microsoft/winget-pkgs.
+      placeholder: Mozilla.Firefox
+    validations:
+      required: true
+  - type: dropdown
+    id: installer
+    attributes:
+      label: Installer type
+      options: [MSI, EXE]
+    validations:
+      required: true
+  - type: input
+    id: signer
+    attributes:
+      label: Authenticode signer name
+      description: Simple name from `Get-AuthenticodeSignature`, exactly as shown.
+  - type: textarea
+    id: hosts
+    attributes:
+      label: Official download hosts
+      description: Hosts in the winget manifest and any redirect targets, with a link to vendor documentation.
+    validations:
+      required: true
+  - type: textarea
+    id: deployment
+    attributes:
+      label: Silent deployment and detection
+      description: Vendor-documented silent and no-restart switches, and where the installed version is recorded.
+  - type: checkboxes
+    id: review
+    attributes:
+      label: Review
+      options:
+        - label: The vendor supports unattended deployment on the requested Windows versions.
+          required: true

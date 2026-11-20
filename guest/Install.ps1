@@ -3,21 +3,28 @@
     Detects Windows and installs a checksum- and Authenticode-validated package.
 
 .DESCRIPTION
-    Runs through Packer WinRM as an administrator.
-    Never reboots. Uses no Win32_Product queries.
+    Embedded in the windows-software Packer provisioner and run over the builder's WinRM session as an administrator under Windows PowerShell 5.1.
+    Each invocation performs one action and writes a JSON result to OutputPath.
+    Never reboots and never queries Win32_Product.
 
 .PARAMETER Action
-    Facts, Inspect or Install.
+    Facts returns the Windows platform. Inspect returns the installed version.
+    Install verifies and runs the installer, then verifies the installed version.
 
 .PARAMETER InputPath
-    JSON request containing the immutable package record and installer path.
+    JSON request with the package record, installer_path and timeout_seconds.
+    Required for Inspect and Install.
 
 .PARAMETER OutputPath
-    JSON response file inside the per-run directory.
+    JSON result file inside the per-run working directory.
+
+.EXAMPLE
+    powershell.exe -File Install.ps1 -Action Facts -OutputPath C:\Windows\Temp\run\001-out.json
 
 .NOTES
     Author  : Lars Krogh
-    Version : 1.0.0
+    Version : 1.1.0
+    A result with fatal = true means the guest is in an unknown state (installer still running or restart initiated); the host aborts the build.
 #>
 
 param(
@@ -37,7 +44,16 @@ Set-StrictMode -Version Latest
 
 $ErrorActionPreference = 'Stop'
 
-function Get-WindowsFacts {
+function Get-WindowsPlatform {
+    <#
+    .SYNOPSIS
+        Returns OS family, build, native architecture and Server Core status.
+    .DESCRIPTION
+        family is empty for releases the package catalog does not recognise.
+    .NOTES
+        Author  : Lars Krogh
+        Version : 1.0.0
+    #>
     $os = Get-CimInstance -ClassName Win32_OperatingSystem
     $build = [int]$os.BuildNumber
     $family = ''
@@ -63,20 +79,32 @@ function Get-WindowsFacts {
             }
         }
     }
-    $architecture = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')
+    $architecture = $env:PROCESSOR_ARCHITEW6432
     if (-not $architecture) {
         $architecture = $env:PROCESSOR_ARCHITECTURE
     }
     return @{
-        name         = $os.Caption;
-        build        = $build;
-        family       = $family;
-        architecture = $architecture;
+        name         = $os.Caption
+        build        = $build
+        family       = $family
+        architecture = $architecture
         server_core  = ($installation -eq 'Server Core')
     }
 }
 
 function Get-InstalledVersion {
+    <#
+    .SYNOPSIS
+        Reads the installed version from file metadata or a registry value.
+    .DESCRIPTION
+        Returns an empty string when the software is absent.
+        Throws when a version is present but not numeric, so an unknown state never looks like "absent".
+    .PARAMETER Detection
+        The package's detection record: type (file or registry), path and value.
+    .NOTES
+        Author  : Lars Krogh
+        Version : 1.0.0
+    #>
     param(
         [Parameter(Mandatory)]
         $Detection
@@ -92,8 +120,7 @@ function Get-InstalledVersion {
         if (-not (Test-Path -LiteralPath $path)) {
             return ''
         }
-        $item = Get-ItemProperty -LiteralPath $path
-        $property = $item.PSObject.Properties[[string]$Detection.value]
+        $property = (Get-ItemProperty -LiteralPath $path).PSObject.Properties[[string]$Detection.value]
         if ($null -eq $property) {
             return ''
         }
@@ -106,6 +133,19 @@ function Get-InstalledVersion {
 }
 
 function ConvertTo-PackageVersion {
+    <#
+    .SYNOPSIS
+        Converts a numeric vendor version to a comparable four-part [version].
+    .DESCRIPTION
+        Missing trailing components become zero and leading zeros are ignored, matching the host's catalog comparison.
+    .PARAMETER Version
+        Numeric version with two to four components.
+    .EXAMPLE
+        (ConvertTo-PackageVersion '26.003.22110') -eq (ConvertTo-PackageVersion '26.3.22110.0')
+    .NOTES
+        Author  : Lars Krogh
+        Version : 1.0.0
+    #>
     param(
         [Parameter(Mandatory)]
         [string]$Version
@@ -121,6 +161,20 @@ function ConvertTo-PackageVersion {
 }
 
 function Assert-Installer {
+    <#
+    .SYNOPSIS
+        Requires the catalog SHA-256, a valid Authenticode signature and an allowed signer.
+    .DESCRIPTION
+        The hash is checked first so a tampered file is never parsed for a signature.
+        The signer certificate's simple name must match signer_subjects exactly (case-sensitive).
+    .PARAMETER Package
+        Catalog record with sha256 and signer_subjects.
+    .PARAMETER Path
+        Installer file to verify.
+    .NOTES
+        Author  : Lars Krogh
+        Version : 1.0.0
+    #>
     param(
         [Parameter(Mandatory)]
         $Package,
@@ -142,30 +196,58 @@ function Assert-Installer {
 }
 
 function Invoke-Installer {
+    <#
+    .SYNOPSIS
+        Runs an EXE or MSI installer silently and returns its exit code.
+    .DESCRIPTION
+        MSI packages run through msiexec with verbose logging next to the installer.
+        A timeout throws System.TimeoutException and leaves the installer running killing Windows Installer mid-transaction would make the image less trustworthy.
+    .PARAMETER Package
+        Catalog record with installer_type and silent_arguments.
+    .PARAMETER Path
+        Verified installer file.
+    .PARAMETER TimeoutSeconds
+        Maximum time to wait for the installer process.
+    .NOTES
+        Author  : Lars Krogh
+        Version : 1.0.0
+    #>
     param(
         [Parameter(Mandatory)]
         $Package,
         [Parameter(Mandatory)]
         [string]$Path,
         [Parameter(Mandatory)]
+        [ValidateRange(1, 86400)]
         [int]$TimeoutSeconds
     )
     $arguments = [string]$Package.silent_arguments
     $executable = $Path
     if ($Package.installer_type -eq 'msi') {
         $executable = "$env:SystemRoot\System32\msiexec.exe"
-        $arguments = '/i "' + $Path + '" ' + $arguments + ' /L*v "' + (Join-Path (Split-Path $Path) 'msi.log') + '"'
+        $log = [IO.Path]::ChangeExtension($Path, '.log')
+        $arguments = "/i `"$Path`" $arguments /L*v `"$log`""
     }
     $process = Start-Process -FilePath $executable -ArgumentList $arguments -PassThru -WindowStyle Hidden
+    $null = $process.Handle
     if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-        throw "Installer timeout after $TimeoutSeconds seconds; installation may still be running; discard this VM"
+        throw [TimeoutException]::new("Installer timeout after $TimeoutSeconds seconds; installation may still be running; discard this VM")
     }
-    $process.Refresh()
+    if ($null -eq $process.ExitCode) {
+        throw 'Installer exit code is unavailable'
+    }
     return [int]$process.ExitCode
 }
 
 function Test-PendingReboot {
-    return (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or ($null -ne (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue))
+    <#
+    .SYNOPSIS
+        Returns true when Windows records a pending restart.
+    .NOTES
+        Author  : Lars Krogh
+        Version : 1.0.0
+    #>
+    return (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') -or ($null -ne (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue))
 }
 
 if ($MyInvocation.InvocationName -eq '.') {
@@ -173,32 +255,34 @@ if ($MyInvocation.InvocationName -eq '.') {
 }
 
 $result = @{
-    error           = '';
-    version         = '';
-    reboot_required = $false;
+    error           = ''
+    fatal           = $false
+    version         = ''
+    reboot_required = $false
     exit_code       = $null
 }
 
 try {
     if ($Action -eq 'Facts') {
-        $result = Get-WindowsFacts
+        $result = Get-WindowsPlatform
     }
     else {
-        $request = Get-Content -LiteralPath $InputPath -Raw | ConvertFrom-Json
+        $request = Get-Content -LiteralPath $InputPath -Raw -Encoding UTF8 | ConvertFrom-Json
         $package = $request.package
         $result.version = Get-InstalledVersion -Detection $package.detection
         if ($Action -eq 'Install') {
-            $facts = Get-WindowsFacts
-            if ($facts.architecture -ne 'AMD64' -or @($package.supported_os) -notcontains $facts.family) {
+            $platform = Get-WindowsPlatform
+            if ($platform.architecture -ne 'AMD64' -or @($package.supported_os) -notcontains $platform.family) {
                 throw 'Unsupported operating system or architecture'
             }
-            if ($facts.server_core -and -not $package.server_core) {
+            if ($platform.server_core -and -not $package.server_core) {
                 throw 'Package requires Desktop Experience'
             }
             Assert-Installer -Package $package -Path $request.installer_path
             $result.exit_code = Invoke-Installer -Package $package -Path $request.installer_path -TimeoutSeconds $request.timeout_seconds
             $result.reboot_required = (@($package.reboot_codes) -contains $result.exit_code) -or (Test-PendingReboot)
             if ($result.exit_code -eq 1641) {
+                $result.fatal = $true
                 throw 'Installer initiated a reboot despite suppression; build cannot be trusted'
             }
             if (@($package.success_codes) -notcontains $result.exit_code) {
@@ -213,5 +297,8 @@ try {
 }
 catch {
     $result.error = $_.Exception.Message
+    if ($_.Exception -is [TimeoutException]) {
+        $result.fatal = $true
+    }
 }
 $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $OutputPath -Encoding UTF8

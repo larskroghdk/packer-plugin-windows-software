@@ -18,14 +18,22 @@ import (
 	"time"
 )
 
+// LatestValidated selects the highest validated version of a package.
+const LatestValidated = "latest-validated"
+
+// maxInstallerBytes bounds host downloads and the resolver alike.
+const maxInstallerBytes = 2 << 30
+
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 var versionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}$`)
+
+// IsVersion reports whether v is a numeric version with two to four components.
+func IsVersion(v string) bool { return versionPattern.MatchString(v) }
 
 // Detection describes registry or file-version based detection on the guest.
 type Detection struct {
 	Type  string `json:"type"`
 	Path  string `json:"path"`
-	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
@@ -57,8 +65,8 @@ type Catalog struct {
 	Packages      []Package `json:"packages"`
 }
 
-// HTTPS rejects credential-bearing and non-HTTPS installer locations.
-func HTTPS(raw string) error {
+// CheckHTTPSURL rejects credential-bearing and non-HTTPS installer locations.
+func CheckHTTPSURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
 		return fmt.Errorf("expected an HTTPS URL without credentials or fragment")
@@ -68,7 +76,7 @@ func HTTPS(raw string) error {
 
 // Validate checks the complete execution contract before any guest mutation.
 func (p Package) Validate() error {
-	if !identifier.MatchString(p.ID) || p.Name == "" || p.Publisher == "" || !versionPattern.MatchString(p.Version) {
+	if !identifier.MatchString(p.ID) || p.Name == "" || p.Publisher == "" || !IsVersion(p.Version) {
 		return fmt.Errorf("invalid identity or numeric version for %q", p.ID)
 	}
 	if p.Architecture != "x64" {
@@ -83,10 +91,10 @@ func (p Package) Validate() error {
 	if p.Source != "vendor" && p.Source != "github-release" {
 		return fmt.Errorf("%s: unsupported source", p.ID)
 	}
-	if err := HTTPS(p.URL); err != nil {
+	if err := CheckHTTPSURL(p.URL); err != nil {
 		return fmt.Errorf("%s URL: %w", p.ID, err)
 	}
-	if err := HTTPS(p.OfficialURL); err != nil {
+	if err := CheckHTTPSURL(p.OfficialURL); err != nil {
 		return fmt.Errorf("%s official URL: %w", p.ID, err)
 	}
 	if _, err := time.Parse(time.RFC3339, p.ValidatedAt); err != nil {
@@ -170,10 +178,18 @@ func Compare(a, b string) int {
 }
 
 // Resolve selects a pinned version or the highest validated numeric version.
+// Pins compare numerically, so "1.2" selects a "1.2.0" record.
 func (c *Catalog) Resolve(id, version string) (Package, error) {
+	latest := version == "" || version == LatestValidated
+	if !latest && !IsVersion(version) {
+		return Package{}, fmt.Errorf("%s: version %q is neither numeric nor %s", id, version, LatestValidated)
+	}
 	var selected Package
 	for _, p := range c.Packages {
-		if p.ID == id && (version == "" || version == "latest-validated" || p.Version == version) && (selected.ID == "" || Compare(p.Version, selected.Version) > 0) {
+		if p.ID != id || (!latest && Compare(p.Version, version) != 0) {
+			continue
+		}
+		if selected.ID == "" || Compare(p.Version, selected.Version) > 0 {
 			selected = p
 		}
 	}
@@ -183,23 +199,25 @@ func (c *Catalog) Resolve(id, version string) (Package, error) {
 	return selected, nil
 }
 
-// Download streams a bounded installer to disk and verifies its digest before upload.
-func Download(ctx context.Context, client *http.Client, p Package, path string) error {
-	if err := p.Validate(); err != nil {
+// Download streams an installer of at most 2 GiB to a new file at path and
+// verifies its SHA-256 digest. Redirects must stay on HTTPS. The file is
+// removed unless the digest matches.
+func Download(ctx context.Context, client *http.Client, rawURL, sha256Hex, path string) error {
+	if err := CheckHTTPSURL(rawURL); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.URL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
 	}
-	clone := *client
-	clone.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	secure := *client
+	secure.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
 			return fmt.Errorf("too many redirects")
 		}
-		return HTTPS(req.URL.String())
+		return CheckHTTPSURL(req.URL.String())
 	}
-	resp, err := clone.Do(req)
+	resp, err := secure.Do(req)
 	if err != nil {
 		return err
 	}
@@ -211,27 +229,29 @@ func Download(ctx context.Context, client *http.Client, p Package, path string) 
 	if err != nil {
 		return err
 	}
-	valid := false
-	defer func() {
+	if err = copyVerified(f, resp.Body, sha256Hex); err != nil {
 		f.Close()
-		if !valid {
-			os.Remove(path)
-		}
-	}()
+		os.Remove(path)
+		return err
+	}
+	if err = f.Close(); err != nil {
+		os.Remove(path)
+		return err
+	}
+	return nil
+}
+
+func copyVerified(dst io.Writer, src io.Reader, sha256Hex string) error {
 	h := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, (2<<30)+1))
+	n, err := io.Copy(io.MultiWriter(dst, h), io.LimitReader(src, maxInstallerBytes+1))
 	if err != nil {
 		return err
 	}
-	if n > 2<<30 {
+	if n > maxInstallerBytes {
 		return fmt.Errorf("installer exceeds 2 GiB")
 	}
-	if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), p.SHA256) {
-		return fmt.Errorf("%s: SHA-256 mismatch", p.ID)
+	if actual := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(actual, sha256Hex) {
+		return fmt.Errorf("SHA-256 mismatch: expected %s, downloaded %s", strings.ToLower(sha256Hex), actual)
 	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	valid = true
 	return nil
 }

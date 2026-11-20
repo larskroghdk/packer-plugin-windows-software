@@ -1,0 +1,52 @@
+name: 🐛 Bug report
+description: The provisioner, guest engine or publication pipeline misbehaved.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never paste WinRM credentials, tokens or `PACKER_LOG` output. Redact host names if needed.
+        For a security vulnerability, use private vulnerability reporting instead of this form.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Provisioner (packer build)
+        - Package detection or installation
+        - Artifact resolution, validation or publication
+        - Example runner
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Plugin version (`describe`), Packer version and builder.
+      placeholder: windows-software 0.1.0, Packer 1.11.2, vsphere-iso
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Guest Windows
+      description: Edition, build and Desktop Experience or Server Core.
+      placeholder: Windows Server 2022 Desktop Experience, build 20348
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Provisioner configuration
+      render: hcl
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Report excerpt
+      description: The failing package entries from `report_path`, with sensitive values removed.
+      render: json

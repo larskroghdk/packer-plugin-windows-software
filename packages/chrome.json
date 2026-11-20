@@ -12,7 +12,6 @@
   "detection": {
     "type": "file",
     "path": "%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe",
-    "name": "",
     "value": ""
   },
   "signer_subjects": ["Google LLC"],
