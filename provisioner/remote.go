@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/packer-plugin-sdk/packer"
 
@@ -33,9 +34,18 @@ func (r *remote) exec(ctx context.Context, args string) error {
 	return nil
 }
 
-// setup creates the working directory and uploads the embedded engine.
+// privateDirectoryScript returns PowerShell that creates dir together with an
+// ACL that grants access only to SYSTEM and Administrators, so a standard user
+// cannot add or change files between upload, verification and execution. The
+// directory must not exist yet, and the created one must be owned by SYSTEM,
+// Administrators or the current user.
+func privateDirectoryScript(dir string) string {
+	return fmt.Sprintf(`$ErrorActionPreference = 'Stop'; $d = '%s'; if (Test-Path -LiteralPath $d) { throw ('Working directory ' + $d + ' already exists') }; $acl = New-Object System.Security.AccessControl.DirectorySecurity; $acl.SetAccessRuleProtection($true, $false); foreach ($id in 'S-1-5-18', 'S-1-5-32-544') { $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(([System.Security.Principal.SecurityIdentifier]$id), 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow'); $acl.AddAccessRule($rule) }; $null = [IO.Directory]::CreateDirectory($d, $acl); $owner = (Get-Acl -LiteralPath $d).GetOwner([System.Security.Principal.SecurityIdentifier]).Value; if ($owner -notin 'S-1-5-18', 'S-1-5-32-544', [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value) { throw ('Working directory ' + $d + ' is owned by ' + $owner) }`, strings.ReplaceAll(dir, "'", "''"))
+}
+
+// setup creates the private working directory and uploads the embedded engine.
 func (r *remote) setup(ctx context.Context) error {
-	if err := r.exec(ctx, fmt.Sprintf(`-Command "$ErrorActionPreference='Stop'; $null=New-Item -ItemType Directory -Path '%s'"`, r.dir)); err != nil {
+	if err := r.exec(ctx, `-Command "`+privateDirectoryScript(r.dir)+`"`); err != nil {
 		return err
 	}
 	r.created = true
