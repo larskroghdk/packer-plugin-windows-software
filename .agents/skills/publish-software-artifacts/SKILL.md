@@ -19,7 +19,7 @@ Review the three steps and the workflow together; a valid workflow can still fai
 - The catalog write must fail on concurrent change (HTTP 409), never overwrite. Do not switch to fetching the remote SHA just before writing.
 - Vendor-only packages never upload installer bytes, not even as Actions artifacts. A moving vendor URL that serves different bytes fails the hash; keep the old record.
 - Workflow permissions stay `contents: read` except the publishing job. Pass inputs through `env`, never `${{ }}` inside `run`. Pin actions to full commit SHAs with a version comment. Reference a GitHub environment only when it exists or the user asks for one.
-- `release.yml` builds the plugin with GoReleaser on `v*` tags as a draft; the binary name embeds the API version from `describe`.
+- `release.yml` builds the plugin with GoReleaser on `v*` tags as a signed public release after checks; the binary name embeds the API version from `describe`.
 
 ## Verify
 

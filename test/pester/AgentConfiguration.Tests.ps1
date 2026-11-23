@@ -2,7 +2,7 @@ BeforeDiscovery {
     $root = (Resolve-Path "$PSScriptRoot/../..").Path
     $script:skills = @(Get-ChildItem -LiteralPath (Join-Path $root '.agents/skills') -Directory | ForEach-Object { @{ Name = $_.Name } })
     $script:documents = @('AGENTS.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'README.md', 'examples/README.md', '.github/copilot-instructions.md') +
-    @(Get-ChildItem -LiteralPath (Join-Path $root '.agents/skills'), (Join-Path $root '.claude/skills') -Recurse -Filter SKILL.md | ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') }) | ForEach-Object { @{ Path = $_ } }
+    @(Get-ChildItem -LiteralPath (Join-Path $root '.agents') -Recurse -Filter SKILL.md | ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') }) | ForEach-Object { @{ Path = $_ } }
 }
 
 BeforeAll {
@@ -29,19 +29,10 @@ BeforeAll {
 Describe 'Shared agent skill <Name>' -ForEach $skills {
     BeforeAll {
         $script:shared = Join-Path $root ".agents/skills/$Name/SKILL.md"
-        $script:pointer = Join-Path $root ".claude/skills/$Name/SKILL.md"
     }
     It 'names itself after its directory' {
         (Get-SkillFrontmatter $shared).name | Should -Be $Name
         (Get-SkillFrontmatter $shared).description | Should -Not -BeNullOrEmpty
-    }
-    It 'has a Claude Code pointer with identical frontmatter' {
-        $pointer | Should -Exist
-        $expected = Get-SkillFrontmatter $shared
-        $actual = Get-SkillFrontmatter $pointer
-        $actual.name | Should -Be $expected.name
-        $actual.description | Should -Be $expected.description
-        Get-Content -LiteralPath $pointer -Raw | Should -Match ([regex]::Escape(".agents/skills/$Name/SKILL.md"))
     }
     It 'is listed in AGENTS.md' {
         Get-Content -LiteralPath (Join-Path $root 'AGENTS.md') -Raw | Should -Match ([regex]::Escape("``$Name``"))
@@ -49,13 +40,25 @@ Describe 'Shared agent skill <Name>' -ForEach $skills {
 }
 
 Describe 'Agent configuration' {
-    It 'has no Claude Code skill without a shared skill' {
-        $orphans = Get-ChildItem -LiteralPath (Join-Path $root '.claude/skills') -Directory |
-        Where-Object { -not (Test-Path -LiteralPath (Join-Path $root ".agents/skills/$($_.Name)/SKILL.md")) }
-        $orphans | Should -BeNullOrEmpty
+    It 'keeps reusable skills in one shared location' {
+        Test-Path -LiteralPath (Join-Path $root '.claude/skills') | Should -BeFalse
     }
-    It 'imports AGENTS.md into CLAUDE.md' {
-        (Get-Content -LiteralPath (Join-Path $root 'CLAUDE.md') -TotalCount 1) | Should -Be '@AGENTS.md'
+    It 'imports shared architecture and standards into CLAUDE.md' {
+        $text = Get-Content -LiteralPath (Join-Path $root 'CLAUDE.md') -Raw
+        foreach ($path in @('architecture/overview.md', 'standards/go.md', 'standards/powershell.md', 'standards/testing.md', 'standards/security.md')) {
+            $text | Should -Match ([regex]::Escape("@.agents/$path"))
+            Join-Path $root ".agents/$path" | Should -Exist
+        }
+    }
+    It 'has read-only Claude reviewers for Go, PowerShell and security' {
+        foreach ($name in @('go', 'powershell', 'security')) {
+            $path = Join-Path $root ".claude/agents/$name-reviewer.md"
+            $path | Should -Exist
+            $fields = Get-SkillFrontmatter $path
+            $fields.name | Should -Be "$name-reviewer"
+            $fields.tools | Should -Be 'Read, Glob, Grep'
+            Get-Content -LiteralPath $path -Raw | Should -Match ([regex]::Escape(".agents/standards/$name.md"))
+        }
     }
 }
 

@@ -1,20 +1,48 @@
 version: 2
-project_name: packer-plugin-windows-software
 builds:
-  - env: [CGO_ENABLED=0]
-    goos: [linux, windows, darwin]
-    goarch: [amd64, arm64]
-    binary: '{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}'
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
     ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.versionPrerelease=
+      - -s
+      - -w
+      - -X main.version={{ .Version }}
+      - -X main.versionPrerelease=
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    binary: '{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}'
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+snapshot:
+  version_template: '{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}'
+release:
+  draft: false
+  prerelease: auto
 archives:
-  - formats: [zip]
+  - formats:
+      - zip
     name_template: '{{ .ProjectName }}_v{{ .Version }}_{{ .Env.API_VERSION }}_{{ .Os }}_{{ .Arch }}'
-    files: [LICENSE]
 checksum:
   name_template: '{{ .ProjectName }}_v{{ .Version }}_SHA256SUMS'
-release:
-  draft: true
-  make_latest: false
-changelog:
-  use: git
+  algorithm: sha256
+signs:
+  - artifacts: checksum
+    args:
+      - --batch
+      - --local-user
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --output
+      - ${signature}
+      - --detach-sign
+      - ${artifact}
