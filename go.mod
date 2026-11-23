@@ -1,6 +1,6 @@
 module github.com/larskroghdk/packer-plugin-windows-software
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/hashicorp/hcl/v2 v2.25.0
@@ -54,7 +54,7 @@ require (
 	github.com/hashicorp/vault/api v1.14.0 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/jehiah/go-strftime v0.0.0-20171201141054-1d33003b3869 // indirect
-	github.com/klauspost/compress v1.18.7 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

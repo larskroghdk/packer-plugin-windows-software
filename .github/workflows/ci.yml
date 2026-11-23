@@ -32,6 +32,8 @@ jobs:
         run: ./scripts/check.ps1
       - name: Staticcheck
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+      - name: Govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
       - name: Actionlint
         if: runner.os == 'Linux'
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7

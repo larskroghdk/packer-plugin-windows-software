@@ -13,7 +13,7 @@ import (
 // version and versionPrerelease are overridden by release ldflags.
 var (
 	version           = "0.1.0"
-	versionPrerelease = "dev"
+	versionPrerelease = ""
 )
 
 func main() {
