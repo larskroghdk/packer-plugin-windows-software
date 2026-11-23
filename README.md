@@ -12,7 +12,7 @@ The checked-in catalog holds real vendor installers validated on 2026-11-20 for 
 - `provisioner/` decodes configuration, selects catalog versions, downloads installers on the host, uploads them through the builder's communicator, runs guest actions and writes the host report.
 - `internal/catalog/` strictly decodes validated records, compares numeric versions and streams size-bounded, hash-verified HTTPS downloads.
 - `guest/Install.ps1` is embedded in the binary and runs under Windows PowerShell 5.1: platform detection, installed-version detection, hash and Authenticode checks, silent installation and final version verification. It never queries `Win32_Product` and never reboots.
-- `packages/<id>.json` recipes hold reviewed acquisition and installation policy; `packages/catalog.json` holds immutable validated records written by automation.
+- `packages/<id>.json` recipes hold reviewed acquisition and installation policy; `packages/catalog.json` holds immutable validated records written by automation and is embedded in the plugin binary at build time.
 - `internal/resolver/` and `cmd/resolve-installers/` find new versions; `scripts/` validates and publishes them.
 
 ## 🧰 Prerequisites and installation
@@ -34,7 +34,6 @@ For a released version, configure `required_plugins` as in [the example](example
 ```hcl
 provisioner "windows-software" {
   packages       = ["vcredist", "powershell7", "adobereader", "chrome", "edge"]
-  catalog_path   = "packages/catalog.json"
   skip_installed = true
   fail_on_error  = true
   timeout        = "30m"
@@ -45,7 +44,7 @@ provisioner "windows-software" {
 | Option | Default | Behavior |
 | --- | --- | --- |
 | `packages` | required | Unique package IDs, installed in list order |
-| `catalog_path` | `packages/catalog.json` | Catalog on the Packer host, relative to Packer's working directory |
+| `catalog_path` | empty | Empty uses the catalog embedded in the plugin. A path loads a catalog file on the Packer host instead, relative to Packer's working directory |
 | `versions` | `{}` | Package ID to numeric version; `1.2` matches a `1.2.0` record. Omitted IDs use `latest-validated` |
 | `skip_installed` | `true` | Skip a package whose installed version equals the selected version (or is newer, for `latest-validated`) |
 | `fail_on_error` | `true` | Stop at the first package failure; `false` records the failure and continues |
@@ -62,7 +61,7 @@ A pin rejects a newer installed version, because automatic downgrades are unsafe
 - report write failures;
 - a guest left in an unknown state (an installer still running after its timeout, or exit code 1641).
 
-For reproducible builds, pin every package and use a catalog from a reviewed commit; `latest-validated` changes as the catalog grows. Browser self-updaters can change versions after provisioning; manage them through policy.
+The embedded catalog is a snapshot taken when the plugin was built, so a plugin release always resolves the same versions. Versions validated after that release need a newer plugin, or a `catalog_path` pointing to `packages/catalog.json` from a reviewed commit. For reproducible builds, pin every package and the plugin version; with a `catalog_path`, `latest-validated` changes as that file grows. Browser self-updaters can change versions after provisioning; manage them through policy.
 
 ## 🪟 Packages and Windows compatibility
 
