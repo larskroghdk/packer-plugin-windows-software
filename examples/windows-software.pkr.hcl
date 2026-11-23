@@ -14,8 +14,9 @@ variable "winrm_password" {
   sensitive = true
 }
 variable "catalog_path" {
-  type    = string
-  default = "packages/catalog.json"
+  type        = string
+  default     = ""
+  description = "Empty uses the catalog embedded in the plugin; a path loads that catalog file instead."
 }
 source "null" "windows" {
   communicator   = "winrm"

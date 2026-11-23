@@ -7,7 +7,7 @@
 - PowerShell 7.4 or newer (`pwsh`).
 - Packer on `PATH` (the repository documents Packer 1.11 or newer).
 - Go on `PATH`, with the toolchain version specified in `../go.mod` available.
-- Network access for Go dependencies and the installer sources recorded in `../packages/catalog.json`.
+- Network access for Go dependencies and the installer sources recorded in `../packages/catalog.json`, which the locally built plugin embeds.
 - A disposable x64 Windows VM supported by the package catalog, with WinRM HTTPS reachable from the Packer host. Its certificate must be trusted and match the connection hostname. Use an elevated guest account.
 
 The runner preserves the HCL example's WinRM TLS settings. It does not change the VM's connection configuration or issue restarts. Installation may require a later, separately managed reboot.

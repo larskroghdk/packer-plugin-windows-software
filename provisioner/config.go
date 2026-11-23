@@ -4,6 +4,7 @@
 package provisioner
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/hashicorp/packer-plugin-sdk/template/interpolate"
 
 	"github.com/larskroghdk/packer-plugin-windows-software/internal/catalog"
+	"github.com/larskroghdk/packer-plugin-windows-software/packages"
 )
 
 // Config defines host-side HCL options. Packages are installed in list order.
@@ -40,7 +42,7 @@ func (p *Provisioner) Prepare(raws ...any) error {
 	p.config = Config{}
 	// The SDK resets the target while decoding HCL2 cty values. Decode defaults
 	// as the first input so omitted HCL attributes retain the same defaults as JSON.
-	defaults := map[string]any{"skip_installed": true, "fail_on_error": true, "timeout": "30m", "download_retries": 2, "catalog_path": "packages/catalog.json"}
+	defaults := map[string]any{"skip_installed": true, "fail_on_error": true, "timeout": "30m", "download_retries": 2}
 	raws = append([]any{defaults}, raws...)
 	if err := config.Decode(&p.config, &config.DecodeOpts{PluginType: "windows-software", Interpolate: true, InterpolateContext: &interpolate.Context{}}, raws...); err != nil {
 		return err
@@ -57,7 +59,13 @@ func (p *Provisioner) Prepare(raws ...any) error {
 	if c.DownloadRetries < 0 || c.DownloadRetries > 5 {
 		return fmt.Errorf("download_retries must be between 0 and 5")
 	}
-	p.catalog, err = catalog.Load(c.CatalogPath)
+	// An empty catalog_path selects the catalog embedded at build time; a path
+	// overrides it with a newer or separately reviewed catalog.
+	if c.CatalogPath == "" {
+		p.catalog, err = catalog.Decode(bytes.NewReader(packages.Catalog))
+	} else {
+		p.catalog, err = catalog.Load(c.CatalogPath)
+	}
 	if err != nil {
 		return fmt.Errorf("load validated catalog: %w", err)
 	}
