@@ -1,7 +1,7 @@
 BeforeDiscovery {
     $root = (Resolve-Path "$PSScriptRoot/../..").Path
     $script:skills = @(Get-ChildItem -LiteralPath (Join-Path $root '.agents/skills') -Directory | ForEach-Object { @{ Name = $_.Name } })
-    $script:documents = @('AGENTS.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'README.md', 'examples/README.md', '.github/copilot-instructions.md') +
+    $script:documents = @('AGENTS.md', 'CLAUDE.md', 'CONTRIBUTING.md', 'README.md', 'examples/README.md', '.github/copilot-instructions.md', 'docs/agent-guidance.md') +
     @(Get-ChildItem -LiteralPath (Join-Path $root '.agents') -Recurse -Filter SKILL.md | ForEach-Object { [IO.Path]::GetRelativePath($root, $_.FullName).Replace('\', '/') }) | ForEach-Object { @{ Path = $_ } }
 }
 
@@ -43,12 +43,8 @@ Describe 'Agent configuration' {
     It 'keeps reusable skills in one shared location' {
         Test-Path -LiteralPath (Join-Path $root '.claude/skills') | Should -BeFalse
     }
-    It 'imports shared architecture and standards into CLAUDE.md' {
-        $text = Get-Content -LiteralPath (Join-Path $root 'CLAUDE.md') -Raw
-        foreach ($path in @('architecture/overview.md', 'standards/go.md', 'standards/powershell.md', 'standards/testing.md', 'standards/security.md')) {
-            $text | Should -Match ([regex]::Escape("@.agents/$path"))
-            Join-Path $root ".agents/$path" | Should -Exist
-        }
+    It 'imports AGENTS.md into CLAUDE.md' {
+        Get-Content -LiteralPath (Join-Path $root 'CLAUDE.md') -Raw | Should -Match '(?m)^@AGENTS\.md\r?$'
     }
     It 'has read-only Claude reviewers for Go, PowerShell and security' {
         foreach ($name in @('go', 'powershell', 'security')) {
@@ -57,7 +53,7 @@ Describe 'Agent configuration' {
             $fields = Get-SkillFrontmatter $path
             $fields.name | Should -Be "$name-reviewer"
             $fields.tools | Should -Be 'Read, Glob, Grep'
-            Get-Content -LiteralPath $path -Raw | Should -Match ([regex]::Escape(".agents/standards/$name.md"))
+            Get-Content -LiteralPath $path -Raw | Should -Match ([regex]::Escape('`AGENTS.md`'))
         }
     }
 }

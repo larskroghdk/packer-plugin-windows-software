@@ -1,9 +1,9 @@
 # Claude Code project instructions
 
-@.agents/architecture/overview.md
-@.agents/standards/go.md
-@.agents/standards/powershell.md
-@.agents/standards/testing.md
-@.agents/standards/security.md
+@AGENTS.md
 
-Read the owning module's AGENTS.md and the relevant `.agents/skills/<name>/SKILL.md` explicitly. The catalog is in [AGENTS.md](AGENTS.md). Claude-specific read-only reviewers live in `.claude/agents`; shared skills are not duplicated under `.claude/skills`. Do not assume native slash-command discovery for shared files. Existing Claude permission settings continue to apply.
+## Claude-specific
+
+- Skills live in `.agents/skills`, not `.claude/skills`, so they aren't offered as `/` commands. Read the matching `SKILL.md` explicitly when a task fits one.
+- `.claude/agents` holds three read-only reviewer subagents (`go-reviewer`, `powershell-reviewer`, `security-reviewer`). They return findings to the parent and never edit files, run guest operations or publish.
+- `.claude/settings.json` allows the read-only checks and asks before pushing, tagging, releasing, dispatching workflows, building with Packer or publishing artifacts.
