@@ -8,7 +8,10 @@ permissions:
   contents: read
 
 jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
   release:
+    needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -20,14 +23,21 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
-      - name: Format, modules, test, vet and build
-        shell: pwsh
-        run: ./scripts/check.ps1
       - name: Determine Packer plugin API version
-        run: echo "API_VERSION=$(./bin/packer-plugin-windows-software describe | jq -r '.api_version')" >> "$GITHUB_ENV"
+        run: |
+          go build -o "$RUNNER_TEMP/packer-plugin-windows-software" .
+          API_VERSION=$("$RUNNER_TEMP/packer-plugin-windows-software" describe | jq -er '.api_version | select(type == "string" and length > 0)')
+          echo "API_VERSION=$API_VERSION" >> "$GITHUB_ENV"
+      - name: Import GPG key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
-          version: v2.8.2
+          version: v2.18.2
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
