@@ -66,6 +66,27 @@ jobs:
           $findings | Format-Table -AutoSize RuleName, ScriptName, Line, Message | Out-String -Width 200
           if ($findings) { exit 1 }
 
+  agent-workflow:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Analyze and test the agent workflow scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.22.0 -Scope CurrentUser -Force
+          Install-Module Pester -RequiredVersion 5.6.1 -Scope CurrentUser -Force -SkipPublisherCheck
+          $findings = 'scripts/ai', 'test/ai' | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Severity Warning, Error }
+          $findings
+          if ($findings) { throw 'PSScriptAnalyzer failed' }
+          Import-Module Pester -RequiredVersion 5.6.1
+          $configuration = New-PesterConfiguration
+          $configuration.Run.Path = 'test/ai'
+          $configuration.Run.Exit = $true
+          Invoke-Pester -Configuration $configuration
+
   snapshot:
     if: github.ref_type != 'tag'
     runs-on: ubuntu-latest

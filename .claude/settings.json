@@ -12,6 +12,15 @@
       "Bash(packer fmt -check:*)",
       "Bash(pwsh -NoProfile -File scripts/check.ps1)"
     ],
+    "deny": [
+      "Bash(git commit --no-verify:*)",
+      "Bash(git commit -n:*)",
+      "Bash(git push --no-verify:*)",
+      "Bash(git -c core.hooksPath:*)",
+      "Bash(git config core.hooksPath:*)",
+      "Bash(git config --unset core.hooksPath:*)",
+      "Edit(.git/**)"
+    ],
     "ask": [
       "Bash(git push:*)",
       "Bash(git tag:*)",
@@ -19,7 +28,8 @@
       "Bash(gh workflow run:*)",
       "Bash(gh api --method PUT:*)",
       "Bash(packer build:*)",
-      "Bash(pwsh -NoProfile -File scripts/publish-artifacts.ps1:*)"
+      "Bash(pwsh -NoProfile -File scripts/publish-artifacts.ps1:*)",
+      "Bash(gh api -X PUT:*)"
     ]
   }
 }

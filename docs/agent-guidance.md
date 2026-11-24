@@ -9,11 +9,16 @@ How the instruction files are laid out and how each coding agent finds them.
 | [CLAUDE.md](../CLAUDE.md) | Imports the root files and adds Claude-only notes | Claude Code |
 | `.claude/agents/*.md` | Three read-only reviewer subagents | Claude Code |
 | `.claude/settings.json` | Permissions: allows the checks, asks before publishing or touching a VM | Claude Code |
-| [.github/copilot-instructions.md](../.github/copilot-instructions.md) | Points Copilot at AGENTS.md | GitHub Copilot |
+| [.github/copilot-instructions.md](../.github/copilot-instructions.md) | Points Copilot at AGENTS.md and sets its role | GitHub Copilot |
+| `.github/instructions/*.instructions.md` | Path-specific rules, such as for workflows | GitHub Copilot |
+| [GEMINI.md](../GEMINI.md) | Imports the root instructions and sets Gemini's role | Gemini CLI |
+| `.claude/commands/*.md` | `/research`, `/docs` and `/review` | Claude Code |
+| `.claude/settings.json` | Denies hook bypasses and `.git` writes | Claude Code |
+| `scripts/ai/`, `.githooks/` | Agent orchestration and the Codex review gate ([ai-development.md](ai-development.md)) | Everyone |
 
 Each rule has one home. Don't copy rules into a skill or a tool-specific file. Link to them instead.
 
-Claude Code's native skill directory is `.claude/skills`. This repository doesn't keep one, because a second copy of each skill would drift. Claude therefore reads skills as files and doesn't offer them as `/` commands. No MCP servers or hooks are configured for the project.
+Claude Code's native skill directory is `.claude/skills`. This repository doesn't keep one, because a second copy of each skill would drift. Claude therefore reads skills as files and doesn't offer them as `/` commands. No MCP servers or Claude Code hooks are configured. The Git hooks and permission settings are described in [ai-development.md](ai-development.md).
 
 ## Checking a change
 

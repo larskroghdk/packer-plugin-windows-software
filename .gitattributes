@@ -2,3 +2,4 @@
 * text=auto eol=lf
 *.exe binary
 *.msi binary
+.githooks/* text eol=lf

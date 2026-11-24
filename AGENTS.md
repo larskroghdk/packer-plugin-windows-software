@@ -38,6 +38,23 @@ packer fmt -check examples
 
 Live installation testing is allowed only against an explicitly selected disposable VM. When reporting, keep mock and protocol tests, download and signature validation, and real installation results apart, and say which checks didn't run.
 
+## Agent workflow
+
+Four agents work on this repository with fixed roles. [docs/ai-development.md](docs/ai-development.md) covers setup, the scripts and troubleshooting.
+
+| Agent | Role | When |
+| --- | --- | --- |
+| Claude Code | Lead developer: decides the design, writes code and tests, coordinates the others, fixes review findings | Always |
+| Gemini CLI | Read-only research and architecture challenges, through `scripts/ai/Invoke-GeminiResearch.ps1` | Major features, design decisions, dependency choices, hard problems |
+| GitHub Copilot CLI | Documentation and `.github/` automation, through `scripts/ai/Invoke-CopilotMaintenance.ps1` | When docs or workflows must change |
+| Codex CLI | Independent reviewer of every changeset, through the pre-commit hook | Every commit |
+
+- Run the deterministic checks before asking for a review. The pre-commit hook runs the matching checks from `scripts/ai/settings.psd1` and then Codex on the exact staged snapshot. A commit is allowed only when Codex approves that changeset and reports no critical or high finding.
+- An approval belongs to one changeset (base tree and result tree). Any change to the staged content needs a new review. The pre-push hook blocks commits without an approval; review them with `Invoke-CodexReview.ps1 -Commit <sha>`.
+- Never bypass the hooks (`--no-verify`, `core.hooksPath` overrides) and never write to `.git/ai`. A failed or unavailable review blocks the commit. Fix the findings and commit again.
+- Only Claude starts the other agents, and only through the scripts in `scripts/ai`. The agents those scripts start never start further agents and never commit or push; the scripts and hooks refuse to run under them (`AI_AGENT_ACTIVE`).
+- When reviewing as Codex, report findings only. Don't edit files.
+
 ## Skills
 
 Task procedures live in `.agents/skills/<name>/SKILL.md`. Read only the one that matches the task:
