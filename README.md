@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/larskroghdk/packer-plugin-windows-software/actions/workflows/ci.yml/badge.svg)](https://github.com/larskroghdk/packer-plugin-windows-software/actions/workflows/ci.yml)
 
-Native HashiCorp Packer provisioner that installs validated x64 Windows software over the builder's WinRM connection. Packages install in list order. No installer runs before its SHA-256 hash and Authenticode signer are verified on both the Packer host and the guest.
+Native HashiCorp Packer provisioner that installs validated x64 Windows software over the builder's WinRM connection. Packages install in list order. The Packer host verifies each download's SHA-256 hash, and the guest verifies the hash again, the Authenticode signature and the exact signer before it runs the installer.
 
 The checked-in catalog holds real vendor installers validated on 2026-11-20 for SHA-256, Authenticode signer and embedded product version. That is trust validation, not proof of a working installation; run the example against a disposable VM for that.
 

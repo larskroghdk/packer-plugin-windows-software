@@ -46,6 +46,10 @@ try {
         Write-AIMessage 'The changeset is empty; there is nothing to review.'
         exit 0
     }
+    if ($changeset.Commit -and (Test-AIPredatesWorkflow -RepositoryRoot $root -Commit $changeset.Commit)) {
+        Write-AIMessage "Commit $($changeset.Commit) predates the review workflow and needs no review."
+        exit 0
+    }
     $settings = Get-AIConfiguration -RepositoryRoot $root -Tree $changeset.Tree
     $record = Get-AIReviewRecord -RepositoryRoot $root -Changeset $changeset
     if (-not $Force -and (Test-AIApproval -Record $record -Changeset $changeset -BlockingSeverities $settings.Codex.BlockingSeverities)) {

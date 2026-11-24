@@ -153,7 +153,7 @@ try {
             $lines = @([Console]::In.ReadToEnd() -split "`n" | Where-Object { $_.Trim() })
             $missing = foreach ($commit in @(Get-OutgoingCommit -RepositoryRoot $root -PushLine $lines -RemoteName $Remote)) {
                 $changeset = Get-AIChangeset -RepositoryRoot $root -Commit $commit
-                if ($changeset.BaseTree -eq $changeset.Tree) {
+                if ($changeset.BaseTree -eq $changeset.Tree -or (Test-AIPredatesWorkflow -RepositoryRoot $root -Commit $commit)) {
                     continue
                 }
                 $settings = Get-AIConfiguration -RepositoryRoot $root -Tree $changeset.Tree

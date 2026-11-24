@@ -59,6 +59,7 @@ function Invoke-AIProcess {
     .DESCRIPTION
         Starts the program without a shell, passes each argument separately, writes the input text to standard input and closes it, and reads standard output and error as UTF-8. When the timeout passes, also while the input is still being written to a process that does not read it, the process tree is killed before standard input is closed.
         A process that is still running when the function fails is killed as well.
+        Reading the output is bounded by the same deadline. A descendant that still holds the output after the process exits is reported as a timeout but not killed, because its process ID can no longer be trusted.
         Agent processes get AI_AGENT_ACTIVE=1 in their environment, so a workflow script that they start refuses to run.
 
     .PARAMETER FilePath
@@ -96,7 +97,7 @@ function Invoke-AIProcess {
 
     .NOTES
         Author  : Lars Krogh
-        Version : 1.3.0
+        Version : 1.4.0
     #>
     [CmdletBinding()]
     param(
@@ -188,11 +189,18 @@ function Invoke-AIProcess {
                 $process.WaitForExit()
             }
         }
+        # A descendant that inherited standard output or error keeps the streams open after the process exits, so reading them is bounded by the deadline too.
+        # Such a descendant is not killed: after its parent exits, its ID can be reused, so it cannot be identified safely. Disposing the process closes the read ends of its pipes.
+        $streams = [Threading.Tasks.Task[]]@($outputTask, $errorTask)
+        $remaining = [Math]::Max(0, ($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+        if (-not [Threading.Tasks.Task]::WaitAll($streams, [int]$remaining)) {
+            $timedOut = $true
+        }
         [PSCustomObject]@{
             ExitCode       = if ($timedOut) { $null } else { $process.ExitCode }
             TimedOut       = $timedOut
-            StandardOutput = $outputTask.GetAwaiter().GetResult()
-            StandardError  = $errorTask.GetAwaiter().GetResult()
+            StandardOutput = if ($outputTask.IsCompletedSuccessfully) { $outputTask.Result } else { '' }
+            StandardError  = if ($errorTask.IsCompletedSuccessfully) { $errorTask.Result } else { '' }
         }
     }
     finally {
@@ -202,6 +210,49 @@ function Invoke-AIProcess {
         }
         $process.Dispose()
     }
+}
+
+function Test-AIPredatesWorkflow {
+    <#
+    .SYNOPSIS
+        Tests whether a commit predates the review workflow.
+
+    .DESCRIPTION
+        A commit predates the workflow when no commit in its history, the commit included, ever added, changed or removed scripts/ai/settings.psd1.
+        Such history was written before reviews existed and cannot be reviewed under a policy it does not contain.
+        A commit that removes the settings has them in its history, so it does not qualify and stays blocked.
+        History merged in from an unrelated branch qualifies, but the merge commit itself still needs an approval for the merged content.
+        A shallow repository never qualifies, because the history that would show the settings can be missing.
+
+    .PARAMETER RepositoryRoot
+        The repository root.
+
+    .PARAMETER Commit
+        The commit to test.
+
+    .EXAMPLE
+        Test-AIPredatesWorkflow -RepositoryRoot $root -Commit HEAD
+
+    .OUTPUTS
+        System.Boolean
+
+    .NOTES
+        Author  : Lars Krogh
+        Version : 1.0.0
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [Parameter(Mandatory)]
+        [string]$Commit
+    )
+    # A shallow repository hides the history before its boundary, where the settings may have existed, so the exemption is never granted there.
+    if ((Invoke-AIGit -ArgumentList 'rev-parse', '--is-shallow-repository' -WorkingDirectory $RepositoryRoot) -ne 'false') {
+        return $false
+    }
+    $touched = Invoke-AIGit -ArgumentList 'rev-list', '-n', '1', '--full-history', $Commit, '--', 'scripts/ai/settings.psd1' -WorkingDirectory $RepositoryRoot
+    [string]::IsNullOrEmpty($touched)
 }
 
 function Invoke-AIGit {

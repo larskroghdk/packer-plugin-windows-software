@@ -387,6 +387,14 @@ Describe 'Process runner' {
         $result.TimedOut | Should -BeTrue
         $watch.Elapsed.TotalSeconds | Should -BeLessThan 15
     }
+    It 'keeps the deadline when a descendant keeps the output open after the process exits' {
+        $command = if ($IsWindows) { @('cmd.exe', '/c', 'start', '/b', 'ping', '-n', '30', '127.0.0.1') } else { @('sh', '-c', 'sleep 30 &') }
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $result = Invoke-AIProcess -FilePath $command[0] -ArgumentList @($command | Select-Object -Skip 1) -TimeoutSeconds 2
+        $watch.Stop()
+        $result.TimedOut | Should -BeTrue
+        $watch.Elapsed.TotalSeconds | Should -BeLessThan 15
+    }
     It 'passes the complete input to a process that reads it' {
         $text = 'y' * 100000
         $result = Invoke-AIProcess -FilePath $pwshPath -ArgumentList '-NoProfile', '-Command', '[Console]::In.ReadToEnd().Length' -InputText $text -TimeoutSeconds 60
@@ -492,6 +500,40 @@ Describe 'Pre-push verification' {
         $null = Invoke-Git commit -q --no-verify -m 'rejected'
         $null = Invoke-Script Invoke-CodexReview.ps1 -Commit HEAD
         (Invoke-Git push origin feature).ExitCode | Should -Not -Be 0
+    }
+    It 'allows a push of history that predates the workflow to an empty remote' {
+        $null = Invoke-Git switch -q --orphan legacy
+        Set-Content -LiteralPath (Join-Path $repo 'legacy.txt') -Value 'before the workflow'
+        $null = Invoke-Git add -- legacy.txt
+        $null = Invoke-Git commit -q --no-verify -m 'legacy'
+        # Back on main, so the hooks and scripts are present and the push runs the real pre-push verification.
+        $null = Invoke-Git switch -q -f main
+        (Test-Path -LiteralPath (Join-Path $repo '.githooks/pre-push')) | Should -BeTrue
+        $null = & git init -q --bare "$repo-empty.git"
+        $null = Invoke-Git remote add empty "$repo-empty.git"
+        $pushed = Invoke-Git push empty legacy
+        $pushed.ExitCode | Should -Be 0 -Because $pushed.Output
+        $pushed.Output | Should -Match 'every outgoing commit is approved'
+        (Invoke-Script Invoke-CodexReview.ps1 -Commit legacy).Output | Should -Match 'predates the review workflow'
+        (Get-AgentCall -Agent codex).Count | Should -Be 0
+    }
+    It 'does not exempt a settings removal at the boundary of a shallow clone' {
+        . (Join-Path $sourceRoot 'scripts/ai/AgentTools.ps1')
+        $null = Invoke-Git rm -q -- scripts/ai/settings.psd1
+        $null = Invoke-Git commit -q --no-verify -m 'remove settings'
+        $clone = "$repo-shallow"
+        $null = & git clone -q --depth 1 "file://$($repo -replace '\\', '/')" $clone 2>&1
+        (& git -C $clone rev-parse --is-shallow-repository) | Should -Be 'true'
+        (& git -C $clone rev-list -n 1 --full-history HEAD -- scripts/ai/settings.psd1) | Should -BeNullOrEmpty -Because 'the shallow history hides the settings'
+        Test-AIPredatesWorkflow -RepositoryRoot $clone -Commit HEAD | Should -BeFalse
+        Test-AIPredatesWorkflow -RepositoryRoot $repo -Commit HEAD | Should -BeFalse
+    }
+    It 'blocks a push of a commit that removes the workflow settings' {
+        $null = Invoke-Git rm -q -- scripts/ai/settings.psd1
+        $null = Invoke-Git commit -q --no-verify -m 'remove settings'
+        $blocked = Invoke-Git push origin main
+        $blocked.ExitCode | Should -Not -Be 0
+        $blocked.Output | Should -Match 'has no scripts/ai/settings.psd1'
     }
     It 'blocks a push of an automatic merge of reviewed branches until the merge is reviewed' {
         $null = Invoke-Git switch -q -c feature
